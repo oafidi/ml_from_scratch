@@ -1,7 +1,11 @@
 class TreeNode:
-    def __init__(self, feature_idx: int, threshold: float, class_probabilities: list[float], information_gain: float):
+    def __init__(self, feature_idx: int = None, threshold: float = None, value: int = None):
+        
+        # for decision node
         self.feature_idx = feature_idx
         self.threshold = threshold
-        self.information_gain = information_gain
         self.right = None
         self.left = None
+
+        # for leaf node
+        self.value = value

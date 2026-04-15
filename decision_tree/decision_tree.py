@@ -6,6 +6,7 @@ class DecisionTreeClassifier:
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
         self.min_information_gain = min_information_gain
+        self.root = None
     
     def _class_probabilities(self, labels: list) -> list[float]:
         total_count = len(labels)
@@ -33,10 +34,8 @@ class DecisionTreeClassifier:
         return data[mask], data[~mask]
     
     def _find_best_split(self, data: np.ndarray) -> dict:
-        best_weighted_entropy = float("inf")
-        best_feature_idx = -1
-        best_threshold = None
-        best_left_group, best_right_group = None, None
+
+        best_split = {}
 
         for feature_idx in range(data.shape[1] - 1):
             thresholds = np.percentile(data[:, feature_idx], q=[25, 50, 75])
@@ -64,25 +63,24 @@ class DecisionTreeClassifier:
     
     def _build_tree(self, data: np.ndarray, current_depth: int = 0):
 
-        if current_depth > self.max_depth:
-            return None
-        
-        best_split_info = self._find_best_split(data)
-        node_entropy = self._group_entropy(data[:, -1])
-        information_gain = node_entropy - best_split_info["weighted_entropy"]
-        
-        node = TreeNode(best_split_info["feature_idx"],
-                        best_split_info["threshold"],
-                        information_gain
-                    )
+        X, y = data[:, :-1], data[:, -1]
+        num_samples, num_features = X.shape
 
-        if (information_gain < self.min_information_gain
-                or len(best_split_info["left_group"]) < self.min_samples_leaf
-                or len(best_split_info["right_group"]) < self.min_samples_leaf):
-            return node
-        
-        node.right = self._build_tree(best_split_info["right_group"], current_depth + 1)
-        node.left = self._build_tree(best_split_info["left_group"], current_depth + 1)
+        if num_samples >= self.min_samples_leaf and current_depth <= self.max_depth:        
+            best_split_info = self._find_best_split(data)
+       
+            node = TreeNode(best_split_info["feature_idx"],
+                            best_split_info["threshold"],
+                            information_gain
+                        )
+
+            if (information_gain < self.min_information_gain
+                    or len(best_split_info["left_group"]) < self.min_samples_leaf
+                    or len(best_split_info["right_group"]) < self.min_samples_leaf):
+                return node
+            
+            node.right = self._build_tree(best_split_info["right_group"], current_depth + 1)
+            node.left = self._build_tree(best_split_info["left_group"], current_depth + 1)
 
         return node
 
