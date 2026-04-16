@@ -8,85 +8,94 @@ class DecisionTreeClassifier:
         self.min_information_gain = min_information_gain
         self.root = None
     
-    def _class_probabilities(self, labels: list) -> list[float]:
-        total_count = len(labels)
-        counter = {}
+    def _class_probabilities(self, group: np.ndarray) -> list[float]:
+        total_count = len(group)
+        _, counts = np.unique(group, return_counts=True)
 
-        for label in labels:
-            counter[label] = counter.get(label, 0) + 1
+        return counts / total_count
 
-        return [label_count / total_count for label_count in counter.values()]
+    def _entropy(self, class_probabilities: np.ndarray) -> float:
+        probabilities = class_probabilities[class_probabilities > 0]
+        return np.sum(-probabilities * np.log2(probabilities))
 
-    def _entropy(self, class_probabilities: list[float]) -> float:
-        return sum([-p * np.log2(p) for p in class_probabilities if p > 0])
-    
-    def _group_entropy(self, labels: list) -> float:
-        return self._entropy(self._class_probabilities(labels))
-    
-    def _weighted_average_entropy(self, groups: list[list]) -> float:
+    def _weighted_average_entropy(self, groups: list[np.ndarray]) -> float:
         total_count = sum([len(group) for group in groups])
 
-        return sum([self._group_entropy(group) * (len(group) / total_count) for group in groups])
+        return sum([self._entropy(self._class_probabilities(group)) * (len(group) / total_count) for group in groups])
     
-    def _split(self, data: np.ndarray, feature_idx: int, feature_value: float) -> tuple:
-        mask = data[:, feature_idx] < feature_value
+    def _information_gain(self, parent: np.ndarray, left_group: np.ndarray, right_group: np.ndarray) -> float:
+        return self._entropy(self._class_probabilities(parent)) - self._weighted_average_entropy([left_group, right_group])
+
+    def _split(self, data: np.ndarray, feature_idx: int, threshold: float) -> tuple:
+        mask = data[:, feature_idx] < threshold
 
         return data[mask], data[~mask]
     
-    def _find_best_split(self, data: np.ndarray) -> dict:
+    def _find_best_split(self, data: np.ndarray, num_features: int) -> dict:
 
         best_split = {}
+        best_split["information_gain"] = -float("inf")
 
-        for feature_idx in range(data.shape[1] - 1):
-            thresholds = np.percentile(data[:, feature_idx], q=[25, 50, 75])
-            
+        for feature_idx in range(num_features):
+            thresholds = np.unique(data[:, feature_idx])
+            thresholds = (thresholds[: -1] + thresholds[1:]) / 2
             for threshold in thresholds:
                 left_group, right_group = self._split(data, feature_idx, threshold)
                 
-                weighted_entropy = self._weighted_average_entropy(
-                    [left_group[:, -1], right_group[:, -1]]
-                )
-                
-                if weighted_entropy < best_weighted_entropy:
-                    best_weighted_entropy = weighted_entropy
-                    best_feature_idx = feature_idx
-                    best_threshold = threshold
-                    best_left_group, best_right_group = left_group, right_group
+                if len(left_group) > 0 and len(right_group) > 0:
 
-        return {
-            "weighted_entropy": best_weighted_entropy,
-            "feature_idx": best_feature_idx,
-            "threshold": best_threshold,
-            "left_group": best_left_group,
-            "right_group": best_right_group
-        }
+                    information_gain = self._information_gain(data[:, -1], left_group[:, -1], right_group[:, -1])
+                    if best_split["information_gain"] < information_gain:
+
+                        best_split["feature_idx"] = feature_idx
+                        best_split["threshold"] = threshold
+                        best_split["left_group"] = left_group
+                        best_split["right_group"] = right_group
+                        best_split["information_gain"] = information_gain
+
+        return best_split
     
-    def _build_tree(self, data: np.ndarray, current_depth: int = 0):
+    def _build_tree(self, data: np.ndarray, current_depth: int = 0) -> TreeNode:
 
-        X, y = data[:, :-1], data[:, -1]
+        X, y = data[:, :-1], list(data[:, -1])
         num_samples, num_features = X.shape
+        node = TreeNode()
 
-        if num_samples >= self.min_samples_leaf and current_depth <= self.max_depth:        
-            best_split_info = self._find_best_split(data)
-       
-            node = TreeNode(best_split_info["feature_idx"],
-                            best_split_info["threshold"],
-                            information_gain
-                        )
+        if num_samples < self.min_samples_leaf or current_depth > self.max_depth:
+            node.value = max(y, key=y.count)
+            return node
 
-            if (information_gain < self.min_information_gain
-                    or len(best_split_info["left_group"]) < self.min_samples_leaf
-                    or len(best_split_info["right_group"]) < self.min_samples_leaf):
-                return node
-            
-            node.right = self._build_tree(best_split_info["right_group"], current_depth + 1)
-            node.left = self._build_tree(best_split_info["left_group"], current_depth + 1)
+        best_split_info = self._find_best_split(data, num_features)
+
+        if best_split_info["information_gain"] <= self.min_information_gain:
+            node.value = max(y, key=y.count)
+            return node
+
+        node.feature_idx = best_split_info["feature_idx"]
+        node.threshold = best_split_info["threshold"]
+        node.right = self._build_tree(best_split_info["right_group"], current_depth + 1)
+        node.left = self._build_tree(best_split_info["left_group"], current_depth + 1)
 
         return node
 
-
+    def _predict(self, x, root) -> int:
+        if root.value != None:
+            return root.value
+        feature_val = x[root.feature_idx]
+        if feature_val < root.threshold:
+            return self._predict(x, root.left)
+        else:
+            return self._predict(x, root.right)
     
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        y = y.reshape(-1, 1)
+        data = np.concatenate((X, y), axis=1)
+        self.root = self._build_tree(data)
 
-model = DecisionTreeClassifier()
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        assert self.root != None, "Fit the model first"
+        y_predicted = np.zeros(X.shape[0])
 
-print(model._entropy([0.5, 0.5]))
+        for i, x in enumerate(X):
+            y_predicted[i] = self._predict(x, self.root)
+        return y_predicted.astype(int)
