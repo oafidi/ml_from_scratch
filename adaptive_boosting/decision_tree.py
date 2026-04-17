@@ -2,11 +2,12 @@ import numpy as np
 from tree_node import TreeNode
 
 class DecisionTreeClassifier:
-    def __init__(self, max_depth: int = 4, min_samples_leaf: int = 1, min_information_gain: float = 0.0, max_features: int | None = None):
+    def __init__(self, max_depth: int = 4, min_samples_leaf: int = 1, min_information_gain: float = 0.0, max_features: int | None = None, amount_of_say: float = 0):
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
         self.min_information_gain = min_information_gain
         self.max_features = max_features
+        self.amount_of_say = amount_of_say
         self.root = None
     
     def _class_probabilities(self, group: np.ndarray) -> np.ndarray:
